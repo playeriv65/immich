@@ -61,6 +61,7 @@
     "backup_onboarding_title": "Yedeklemeler",
     "backup_settings": "Veritabanı Yığını Ayarları",
     "backup_settings_description": "Veritabanı döküm ayarlarını yönet.",
+    "backups": "Yedeklemeler",
     "cleared_jobs": "{job} için işler temizlendi",
     "config_set_by_file": "Ayarlar şuanda config dosyası tarafından ayarlanmıştır",
     "confirm_delete_library": "{library} kütüphanesini silmek istediğinize emin misiniz?",
