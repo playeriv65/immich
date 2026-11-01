@@ -289,6 +289,12 @@ class TestShapePolicy:
 
 
 @pytest.mark.usefixtures("ort_session")
+def test_release_without_a_process_allocator(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setattr(allocator, "_process", None)
+
+    allocator.release()
+
+
 class TestOrtSessions:
     CPU_EP = ["CPUExecutionProvider"]
     CUDA_EP = ["CUDAExecutionProvider", "CPUExecutionProvider"]
@@ -562,6 +568,26 @@ class TestOrtSessions:
         thread.join()
 
         assert results == [0.0]
+
+    def test_directml_disables_memory_patterns_and_parallel_execution(
+        self, tmp_path: Path, monkeypatch: MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(settings, "model_inter_op_threads", 4)
+        spec = graph_spec(tmp_path / "model.onnx", providers=["DmlExecutionProvider", "CPUExecutionProvider"])
+
+        options = spec.sess_options()
+
+        assert not options.enable_mem_pattern
+        assert options.execution_mode == ort.ExecutionMode.ORT_SEQUENTIAL
+        assert spec.provider_options[0] == {"device_id": settings.device_id}
+
+    def test_directml_does_not_silently_fall_back_to_cpu(self, tmp_path: Path, mocker: MockerFixture) -> None:
+        session = mocker.patch("immich_ml.sessions.ort.ort.InferenceSession").return_value
+        session.get_providers.return_value = ["CPUExecutionProvider"]
+        spec = graph_spec(tmp_path / "model.onnx", providers=["DmlExecutionProvider", "CPUExecutionProvider"])
+
+        with pytest.raises(RuntimeError, match="GPU execution is required"):
+            spec.session(spec.model_path)
 
     def test_sets_default_sess_options_if_cpu(self, ort_session: mock.Mock) -> None:
         ort_sessions("ViT-B-32__openai", providers=["CPUExecutionProvider"])

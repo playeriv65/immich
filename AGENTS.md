@@ -23,3 +23,7 @@ Immich monorepo: `server/` (NestJS API + job workers), `web/` (SvelteKit SPA), `
 ## Offline external storage
 
 Implementation and validation are documented in `docs/docs/guides/offline-external-storage.md`. Preserve user deletion intent, cached previews and pending jobs when a source disk disconnects. Keep deployment environments and device-test records outside this repository.
+
+## Windows machine learning
+
+Native DirectML setup is documented in `docs/docs/guides/windows-directml.md`. Preserve the Linux Gunicorn entry point when changing Windows startup. Validate DirectML session options and per-session serialization, and keep deployment state outside the repository.

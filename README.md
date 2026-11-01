@@ -128,3 +128,5 @@ Read more about translations [here](https://docs.immich.app/developer/translatio
 ## Offline external storage
 
 This local implementation supports removable external libraries while retaining cached previews and pending work. See [the setup and validation guide](docs/docs/guides/offline-external-storage.md).
+
+Native Windows GPU inference is available through [DirectML](docs/docs/guides/windows-directml.md).

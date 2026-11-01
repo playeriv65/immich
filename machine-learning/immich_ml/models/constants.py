@@ -95,6 +95,7 @@ SUPPORTED_PROVIDERS = [
     "nv_tensorrt_rtx",
     "CUDAExecutionProvider",
     "MIGraphXExecutionProvider",
+    "DmlExecutionProvider",
     "OpenVINOExecutionProvider",
     "CoreMLExecutionProvider",
     "CPUExecutionProvider",

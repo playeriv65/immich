@@ -1,4 +1,3 @@
-import fcntl
 import pickle
 import sys
 from pathlib import Path
@@ -6,6 +5,7 @@ from shutil import rmtree
 from typing import Any
 
 import onnx
+from filelock import FileLock
 from google.protobuf.message import DecodeError
 from immich_model.onnx.f16 import derive
 from immich_model.runtime import apply_rewrites
@@ -17,8 +17,7 @@ from .ort import UNREADABLE, GraphSpec, Manifest, fresh
 
 def main() -> None:
     spec: GraphSpec = pickle.loads(sys.stdin.buffer.read())
-    with spec.model_path.with_suffix(".lock").open("w") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)  # several workers may want the same graph
+    with FileLock(spec.model_path.with_suffix(".lock")):
         if fresh(spec) is None:
             try:
                 prepare(spec)

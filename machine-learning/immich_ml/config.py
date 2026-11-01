@@ -2,18 +2,15 @@ import concurrent.futures
 import logging
 import logging.config
 import os
-import sys
 from pathlib import Path
 from socket import socket
 from typing import Any
 
-from gunicorn.arbiter import Arbiter
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from rich.console import Console
 from rich.logging import RichHandler
 from uvicorn import Server
-from uvicorn.workers import UvicornWorker
 
 from .schemas import ModelOrganization
 
@@ -165,13 +162,3 @@ class CustomUvicornServer(Server):
         for sock in sockets or []:
             sock.close()
         await super().shutdown()
-
-
-class CustomUvicornWorker(UvicornWorker):
-    async def _serve(self) -> None:
-        self.config.app = self.wsgi
-        server = CustomUvicornServer(config=self.config)
-        self._install_sigquit_handler()
-        await server.serve(sockets=self.sockets)
-        if not server.started:
-            sys.exit(Arbiter.WORKER_BOOT_ERROR)

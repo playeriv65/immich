@@ -6,7 +6,7 @@ import platform
 import subprocess
 import sys
 from collections.abc import Mapping, Sequence
-from contextlib import nullcontext
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from functools import cache, cached_property
 from pathlib import Path
@@ -63,7 +63,13 @@ global_lock = Lock()
 class OrtGraph:
     def __init__(self, spec: GraphSpec) -> None:
         graph = prepared(spec)
-        self.lock = global_lock if spec.provider == "nv_tensorrt_rtx" else nullcontext()
+        self.lock: AbstractContextManager[object]
+        if spec.provider == "nv_tensorrt_rtx":
+            self.lock = global_lock
+        elif spec.provider == "DmlExecutionProvider":
+            self.lock = Lock()
+        else:
+            self.lock = nullcontext()
         with self.lock:
             self._session = spec.session(graph)
         image = self._session.get_inputs()[0]
@@ -170,13 +176,16 @@ class GraphSpec:
         )
 
     def session(self, graph: Path, sess_options: ort.SessionOptions | None = None) -> ort.InferenceSession:
-        return ort.InferenceSession(
+        session = ort.InferenceSession(
             graph.as_posix(),
             providers=self.providers,
             provider_options=self.provider_options,
             sess_options=sess_options or self.sess_options(),
             disabled_optimizers=self.disabled_optimizers,
         )
+        if self.provider == "DmlExecutionProvider" and self.provider not in session.get_providers():
+            raise RuntimeError("DirectML session initialization failed; GPU execution is required")
+        return session
 
     @cached_property
     def provider_options(self) -> list[dict[str, Any]]:
@@ -189,6 +198,8 @@ class GraphSpec:
                     options = {"arena_extend_strategy": "kSameAsRequested", "device_id": settings.device_id}
                 case "nv_tensorrt_rtx":
                     options = {"device_id": settings.device_id, "nv_runtime_cache_path": self.directory.as_posix()}
+                case "DmlExecutionProvider":
+                    options = {"device_id": settings.device_id}
                 case "MIGraphXExecutionProvider":
                     options = {"device_id": settings.device_id, "migraphx_model_cache_dir": self.directory.as_posix()}
                 case "OpenVINOExecutionProvider":
@@ -231,6 +242,10 @@ class GraphSpec:
 
         if sess_options.inter_op_num_threads > 1:
             sess_options.execution_mode = ort.ExecutionMode.ORT_PARALLEL
+
+        if self.provider == "DmlExecutionProvider":
+            sess_options.enable_mem_pattern = False
+            sess_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
 
         for dimension, size in self.overrides:
             sess_options.add_free_dimension_override_by_name(dimension, size)

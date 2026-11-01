@@ -1,6 +1,7 @@
 import os
 import signal
 import subprocess
+import sys
 from ipaddress import ip_address
 from pathlib import Path
 
@@ -31,31 +32,49 @@ if is_ipv6(bind_host):
     bind_host = f"[{bind_host}]"
 bind_address = f"{bind_host}:{non_prefixed_settings.immich_port}"
 
+command = [
+    sys.executable,
+    "-m",
+    "gunicorn",
+    "immich_ml.main:app",
+    "-k",
+    "immich_ml.gunicorn_conf.CustomUvicornWorker",
+    "-c",
+    str(module_dir / "gunicorn_conf.py"),
+    "-b",
+    bind_address,
+    "-w",
+    str(settings.workers),
+    "-t",
+    str(settings.worker_timeout),
+    "--keep-alive",
+    str(settings.http_keepalive_timeout_s),
+    "--graceful-timeout",
+    "10",
+    "--no-control-socket",
+]
+if sys.platform == "win32":
+    command = [
+        sys.executable,
+        "-m",
+        "uvicorn",
+        "immich_ml.main:app",
+        "--host",
+        non_prefixed_settings.immich_host,
+        "--port",
+        str(non_prefixed_settings.immich_port),
+        "--workers",
+        str(settings.workers),
+        "--timeout-keep-alive",
+        str(settings.http_keepalive_timeout_s),
+    ]
+
 try:
-    with subprocess.Popen(
-        [
-            "python",
-            "-m",
-            "gunicorn",
-            "immich_ml.main:app",
-            "-k",
-            "immich_ml.config.CustomUvicornWorker",
-            "-c",
-            module_dir / "gunicorn_conf.py",
-            "-b",
-            bind_address,
-            "-w",
-            str(settings.workers),
-            "-t",
-            str(settings.worker_timeout),
-            "--keep-alive",
-            str(settings.http_keepalive_timeout_s),
-            "--graceful-timeout",
-            "10",
-            "--no-control-socket",
-        ],
-    ) as cmd:
+    with subprocess.Popen(command) as cmd:
         cmd.wait()
 except KeyboardInterrupt:
-    cmd.send_signal(signal.SIGINT)
+    if sys.platform == "win32":
+        cmd.terminate()
+    else:
+        cmd.send_signal(signal.SIGINT)
 exit(cmd.returncode)
