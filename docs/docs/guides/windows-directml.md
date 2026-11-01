@@ -11,6 +11,8 @@ This fork can run the machine-learning service natively on Windows through ONNX 
 5. Start `uv run --extra directml python -m immich_ml`.
 6. Configure the Docker-hosted server's machine-learning URL as `http://host.docker.internal:3003`. Verify that the container can reach `/ping` before importing a library. Keep this unauthenticated service restricted to the local machine.
 
+For the DirectML deployment, set `MACHINE_LEARNING_MODEL_TTL=0` to retain GPU sessions. On the tested Radeon 780M, timed model eviction and recreation caused native access violations during subsequent multi-model inference. Merely upgrading ONNX Runtime did not resolve that reproduction. Keeping sessions resident avoids this lifecycle and requires enough RAM for the active models. Validate a batch covering detection, recognition, image search and OCR, including repeated idle/reload cycles before enabling automatic unloading.
+
 Use `MACHINE_LEARNING_MODEL_REVISION=v2` for the current models and GPU FP16 preparation. Start with one request thread and one job per machine-learning queue, particularly on integrated GPUs that share system memory. A multilingual search model also needs memory for its text encoder when a search runs.
 
 DirectML sessions disable memory-pattern optimization, use sequential execution and serialize calls to each session. CPU fallback remains available for operators unsupported by DirectML. Verify GPU execution with an ONNX Runtime profile; merely listing an installed provider does not establish that a graph used it.

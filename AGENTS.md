@@ -27,3 +27,5 @@ Implementation and validation are documented in `docs/docs/guides/offline-extern
 ## Windows machine learning
 
 Native DirectML setup is documented in `docs/docs/guides/windows-directml.md`. Preserve the Linux Gunicorn entry point when changing Windows startup. Validate DirectML session options and per-session serialization, and keep deployment state outside the repository.
+
+DirectML device validation must cover sustained multi-model inference and model lifetime changes. Service supervisors must preserve nonzero exit status and use an exclusive lock; queue recovery must compare stored results with already queued asset IDs.

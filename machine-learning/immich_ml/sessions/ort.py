@@ -283,7 +283,11 @@ def prepared(spec: GraphSpec) -> Path:
     if (graph := fresh(spec)) is None:
         log.info(f"Preparing {spec.model_path} for {spec.provider} {dict(spec.pins)}")
         # child process prepares the graph to avoid memory overhead in the main process
-        child = subprocess.run([sys.executable, "-m", "immich_ml.sessions.prepare"], input=pickle.dumps(spec))
+        child = subprocess.run(
+            [sys.executable, "-m", "immich_ml.sessions.prepare"],
+            input=pickle.dumps(spec),
+            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+        )
         if (graph := fresh(spec)) is None:
             if child.returncode == UNREADABLE:
                 raise InvalidProtobuf(f"{spec.model_path} could not be read")

@@ -70,7 +70,7 @@ if sys.platform == "win32":
     ]
 
 try:
-    with subprocess.Popen(command) as cmd:
+    with subprocess.Popen(command, creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0) as cmd:
         cmd.wait()
 except KeyboardInterrupt:
     if sys.platform == "win32":

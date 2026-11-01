@@ -3,6 +3,7 @@ import json
 import os
 import pickle
 import platform
+import subprocess
 import sys
 import threading
 import time
@@ -772,6 +773,9 @@ class TestPreparedGraphs:
         assert prepared(spec()) == prepared(spec()) == tmp_path / "cpu" / platform.machine() / "model.onnx"
         child.assert_called_once()
         assert child.call_args.args[0][1:] == ["-m", "immich_ml.sessions.prepare"]
+        assert child.call_args.kwargs["creationflags"] == (
+            subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+        )
 
         mocker.patch("immich_ml.sessions.ort.ort.__version__", "9.9.9")  # what it packed may not be read back the same
         prepared(spec())
