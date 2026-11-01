@@ -19,3 +19,7 @@ Immich monorepo: `server/` (NestJS API + job workers), `web/` (SvelteKit SPA), `
 
 - **Regenerate the API clients**: after any change to a server controller or DTO, run `mise //:open-api`. It rebuilds the server, rewrites the OpenAPI spec, regenerates the TypeScript SDK and the Dart client. The CI job "OpenAPI Clients" fails if this is stale. If a response field became required, the Dart client also needs a backward-compatibility patch in `open-api/patch`, checked by `flutter test test/openapi_patches_coverage.dart` (job "check-mobile-patches").
 - **Add a translation string**: add the key to `i18n/en.json`, then run `mise //:i18n:format-fix` so the file stays key-sorted (CI job "Test i18n" fails otherwise). For the mobile app also run `mise //mobile:translation`. Web keys are typed against `en.json`, so the key must exist before `tsc` passes.
+
+## Offline external storage
+
+Implementation and validation are documented in `docs/docs/guides/offline-external-storage.md`. Preserve user deletion intent, cached previews and pending jobs when a source disk disconnects. Keep deployment environments and device-test records outside this repository.

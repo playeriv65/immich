@@ -213,6 +213,7 @@ export type JobOf<T extends JobName> = Jobs[T];
 
 export interface IBaseJob {
   force?: boolean;
+  libraryResume?: boolean;
 }
 
 export interface IDelayedJob extends IBaseJob {

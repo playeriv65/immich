@@ -560,6 +560,8 @@ where
 select
   "asset"."id",
   "originalFileName",
+  "asset"."isOffline",
+  "asset"."libraryId",
   "asset_file"."path" as "editedPath",
   "originalPath"
 from
@@ -574,6 +576,8 @@ where
 select
   "asset"."id",
   "originalFileName",
+  "asset"."isOffline",
+  "asset"."libraryId",
   "asset_file"."path" as "editedPath",
   "originalPath"
 from
@@ -588,6 +592,7 @@ where
 select
   "asset"."originalPath",
   "asset"."originalFileName",
+  "asset"."isOffline",
   "asset_file"."path" as "path"
 from
   "asset"

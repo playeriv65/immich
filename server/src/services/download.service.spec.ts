@@ -30,6 +30,17 @@ describe(DownloadService.name, () => {
   });
 
   describe('downloadArchive', () => {
+    it('rejects an offline original before opening an archive stream', async () => {
+      const asset = AssetFactory.create({ isOffline: true });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForOriginals.mockResolvedValue([asset]);
+
+      await expect(sut.downloadArchive(authStub.admin, { assetIds: [asset.id] })).rejects.toThrow(
+        'Original storage is offline',
+      );
+      expect(mocks.storage.createZipStream).not.toHaveBeenCalled();
+    });
+
     it('should skip asset ids that could not be found', async () => {
       const archiveMock = {
         addFile: vitest.fn(),

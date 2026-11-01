@@ -15,7 +15,7 @@ import { ImmichStartupError, getKeyByValue, getMethodNames } from 'src/utils/mis
 type JobMapItem = {
   jobName: JobName;
   queueName: QueueName;
-  handler: (job: JobOf<any>) => Promise<JobStatus>;
+  handler: (job: JobOf<any>) => Promise<JobStatus | undefined>;
   label: string;
 };
 
@@ -254,6 +254,9 @@ export class JobRepository {
   }
 
   private getJobOptions(item: JobItem): JobsOptions | null {
+    if (item.data && 'libraryResume' in item.data && item.data.libraryResume && 'id' in item.data) {
+      return { deduplication: { id: `${item.name}/${item.data.id}` } };
+    }
     switch (item.name) {
       case JobName.NotifyAlbumUpdate: {
         return {

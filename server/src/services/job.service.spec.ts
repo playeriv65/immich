@@ -1,8 +1,9 @@
+import { Stats } from 'node:fs';
 import type { JobItem } from 'src/types.js';
 import { AssetType, ImmichWorker, JobName, JobStatus, QueueName } from 'src/enum.js';
 import { JobService } from 'src/services/job.service.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
-import { newUuid } from 'test/small.factory.js';
+import { factory, newUuid } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
 describe(JobService.name, () => {
@@ -11,6 +12,7 @@ describe(JobService.name, () => {
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(JobService));
+    mocks.library.getByAssetId.mockResolvedValue(undefined);
 
     mocks.config.getWorker.mockReturnValue(ImmichWorker.Microservices);
   });
@@ -20,6 +22,72 @@ describe(JobService.name, () => {
   });
 
   describe('onJobRun', () => {
+    it('persists original-dependent work without failure or follow-up jobs while offline', async () => {
+      const library = {
+        ...factory.library({ allowOffline: true, importPaths: ['/disk'] }),
+        originalPath: '/disk/a.jpg',
+      };
+      const job: JobItem = { name: JobName.SidecarCheck, data: { id: newUuid(), source: 'upload' } };
+      mocks.library.getByAssetId.mockResolvedValue(library);
+      mocks.library.updateStorageStatus.mockResolvedValue();
+      mocks.library.deferJob.mockResolvedValue();
+      mocks.storage.stat.mockRejectedValue(Object.assign(new Error('Storage unavailable'), { code: 'ENOENT' }));
+
+      await sut.onJobRun(QueueName.Sidecar, job);
+
+      expect(mocks.library.deferJob).toHaveBeenCalledWith(library.id, job.data.id, job);
+      expect(mocks.job.run).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('JobError', expect.anything());
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('JobSuccess', expect.anything());
+      expect(mocks.logger.error).not.toHaveBeenCalled();
+    });
+
+    it('defers a job if the disk disconnects during execution', async () => {
+      const library = {
+        ...factory.library({ allowOffline: true, importPaths: ['/disk'] }),
+        originalPath: '/disk/a.jpg',
+      };
+      const job: JobItem = { name: JobName.AssetExtractMetadata, data: { id: newUuid() } };
+      mocks.library.getByAssetId.mockResolvedValue(library);
+      mocks.library.updateStorageStatus.mockResolvedValue();
+      mocks.library.deferJob.mockResolvedValue();
+      mocks.storage.stat
+        .mockResolvedValueOnce({ isDirectory: () => true } as Stats)
+        .mockRejectedValue(Object.assign(new Error('Storage unavailable'), { code: 'ENOENT' }));
+      mocks.job.run.mockRejectedValue(new Error('Original disappeared'));
+
+      await sut.onJobRun(QueueName.MetadataExtraction, job);
+
+      expect(mocks.library.deferJob).toHaveBeenCalledWith(library.id, job.data.id, job);
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('JobError', expect.anything());
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it.each([JobStatus.Success, JobStatus.Skipped, undefined, JobStatus.Failed])(
+      'handles a resumed job completion result %s',
+      async (response) => {
+        const library = {
+          ...factory.library({ allowOffline: true, importPaths: ['/disk'] }),
+          originalPath: '/disk/a.jpg',
+        };
+        const job: JobItem = { name: JobName.SidecarCheck, data: { id: newUuid(), libraryResume: true } };
+        mocks.library.getByAssetId.mockResolvedValue(library);
+        mocks.library.updateStorageStatus.mockResolvedValue();
+        mocks.library.deleteDeferredJob.mockResolvedValue();
+        mocks.storage.stat.mockResolvedValue({ isDirectory: () => true } as Stats);
+        mocks.job.run.mockResolvedValue(response);
+
+        await sut.onJobRun(QueueName.Sidecar, job);
+
+        if (response === JobStatus.Failed) {
+          expect(mocks.library.deleteDeferredJob).not.toHaveBeenCalled();
+        } else {
+          expect(mocks.library.deleteDeferredJob).toHaveBeenCalledWith(library.id, job.data.id, job.name);
+        }
+      },
+    );
+
     it('should queue metadata extraction when sidecar discovery is skipped', async () => {
       const job: JobItem = { name: JobName.SidecarCheck, data: { id: 'asset-1', source: 'upload' } };
       mocks.job.run.mockResolvedValue(JobStatus.Skipped);

@@ -118,20 +118,16 @@
 
     {#if asset.isOffline}
       <section class="p-4">
-        <div role="alert">
-          <div class="rounded-t bg-red-500 px-4 py-2 font-bold text-white">
+        <div role="status">
+          <div class="rounded-t bg-gray-600 px-4 py-2 font-bold text-white">
             {$t('asset_offline')}
           </div>
-          <div class="border border-t-0 border-red-400 bg-red-100 px-4 py-3 text-red-700">
+          <div class="border border-t-0 border-gray-400 bg-gray-100 px-4 py-3 text-gray-700">
             <p>
-              {#if authManager.authenticated && authManager.user.isAdmin}
-                {$t('admin.asset_offline_description')}
-              {:else}
-                {$t('asset_offline_description')}
-              {/if}
+              {$t('asset_storage_offline_description')}
             </p>
           </div>
-          <div class="rounded-b bg-red-500 px-4 py-2 text-sm text-white">
+          <div class="rounded-b bg-gray-600 px-4 py-2 text-sm text-white">
             <p>{asset.originalPath}</p>
           </div>
         </div>

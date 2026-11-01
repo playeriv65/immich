@@ -2185,6 +2185,7 @@ export type QueueCommandDto = {
     force?: boolean;
 };
 export type LibraryResponseDto = {
+    allowOffline?: boolean;
     /** Number of assets */
     assetCount: number;
     /** Creation date */
@@ -2201,10 +2202,22 @@ export type LibraryResponseDto = {
     ownerId: string;
     /** Last refresh date */
     refreshedAt: string | null;
+    storageChecks?: {
+        expectedValue: string;
+        importPath: string;
+        markerPath: string;
+    }[];
+    storageStatus?: {
+        importPath: string;
+        message?: string;
+        status: Status;
+    }[];
     /** Last update date */
     updatedAt: string;
 };
 export type CreateLibraryDto = {
+    /** Allow storage to be disconnected during normal use */
+    allowOffline?: boolean;
     /** Exclusion patterns (max 128) */
     exclusionPatterns?: string[];
     /** Import paths (max 128) */
@@ -2213,14 +2226,28 @@ export type CreateLibraryDto = {
     name?: string;
     /** Owner user ID */
     ownerId: string;
+    /** Read-only storage identity checks */
+    storageChecks?: {
+        expectedValue: string;
+        importPath: string;
+        markerPath: string;
+    }[];
 };
 export type UpdateLibraryDto = {
+    /** Allow storage to be disconnected during normal use */
+    allowOffline?: boolean;
     /** Exclusion patterns (max 128) */
     exclusionPatterns?: string[];
     /** Import paths (max 128) */
     importPaths?: string[];
     /** Library name */
     name?: string;
+    /** Read-only storage identity checks */
+    storageChecks?: {
+        expectedValue: string;
+        importPath: string;
+        markerPath: string;
+    }[];
 };
 export type LibraryStatsResponseDto = {
     /** Number of photos */
@@ -9673,6 +9700,11 @@ export enum QueueCommand {
     Resume = "resume",
     Empty = "empty",
     ClearFailed = "clear-failed"
+}
+export enum Status {
+    Online = "online",
+    Offline = "offline",
+    Error = "error"
 }
 export enum MemorySearchOrder {
     Asc = "asc",

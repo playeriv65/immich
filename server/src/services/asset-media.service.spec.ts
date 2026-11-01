@@ -176,6 +176,7 @@ describe(AssetMediaService.name, () => {
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(AssetMediaService));
+    mocks.library.getByAssetId.mockResolvedValue(undefined);
   });
 
   describe('getUploadAssetIdByChecksum', () => {
@@ -643,6 +644,15 @@ describe(AssetMediaService.name, () => {
   });
 
   describe('viewThumbnail', () => {
+    it('serves a preview instead of redirecting to an unavailable original', async () => {
+      const asset = AssetFactory.create({ originalPath: '/disk/a.jpg', isOffline: true });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForThumbnail.mockResolvedValue({ ...asset, path: null });
+
+      await expect(
+        sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.FULLSIZE, edited: false }),
+      ).resolves.toEqual({ targetSize: AssetMediaSize.PREVIEW });
+    });
     it('should require asset.view permissions', async () => {
       await expect(sut.viewThumbnail(authStub.admin, 'id', {})).rejects.toBeInstanceOf(BadRequestException);
 

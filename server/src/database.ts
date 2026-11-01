@@ -50,6 +50,9 @@ export type Library = {
   name: string;
   importPaths: string[];
   exclusionPatterns: string[];
+  allowOffline: boolean;
+  storageChecks: import('src/utils/library-storage.js').LibraryStorageCheck[];
+  storageStatus: import('src/utils/library-storage.js').LibraryStorageState[];
   deletedAt: Date | null;
   refreshedAt: Date | null;
   assets?: MapAsset[];

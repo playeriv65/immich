@@ -15,6 +15,7 @@ import { userAdminFactory } from '#test-data/factories/user-factory';
 vitest.mock('@immich/ui', () => ({
   toastManager: {
     primary: vitest.fn(),
+    info: vitest.fn(),
   },
 }));
 
@@ -77,6 +78,14 @@ describe('AssetService', () => {
   });
 
   describe('handleDownloadAsset', () => {
+    it('explains an unavailable original without starting a download', async () => {
+      const $t = vitest.fn().mockReturnValue('Connect the photo disk');
+      vitest.mocked(getFormatter).mockResolvedValue($t);
+      const asset = assetFactory.build({ isOffline: true, isEdited: false });
+      await handleDownloadAsset(asset, { edited: false });
+      expect(toastManager.info).toHaveBeenCalledWith('Connect the photo disk');
+      expect(toastManager.primary).not.toHaveBeenCalled();
+    });
     it('should use the asset originalFileName when showing toasts', async () => {
       const $t = vitest.fn().mockReturnValue('formatter');
       vitest.mocked(getFormatter).mockResolvedValue($t);

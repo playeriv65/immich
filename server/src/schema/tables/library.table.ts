@@ -9,6 +9,7 @@ import {
   Timestamp,
   UpdateDateColumn,
 } from '@immich/sql-tools';
+import type { LibraryStorageCheck, LibraryStorageState } from 'src/utils/library-storage.js';
 import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 
@@ -29,6 +30,15 @@ export class LibraryTable {
 
   @Column({ type: 'text', array: true })
   exclusionPatterns!: string[];
+
+  @Column({ type: 'boolean', default: false })
+  allowOffline!: Generated<boolean>;
+
+  @Column({ type: 'jsonb', default: () => "'[]'::jsonb" })
+  storageChecks!: Generated<LibraryStorageCheck[]>;
+
+  @Column({ type: 'jsonb', default: () => "'[]'::jsonb" })
+  storageStatus!: Generated<LibraryStorageState[]>;
 
   @CreateDateColumn()
   createdAt!: Generated<Timestamp>;

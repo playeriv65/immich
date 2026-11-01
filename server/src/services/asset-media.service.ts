@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
 import sanitize from 'sanitize-filename';
 import type { UploadFile, UploadRequest } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
@@ -34,6 +40,7 @@ import { requireUploadAccess } from 'src/utils/access.js';
 import { asUploadRequest, onBeforeLink } from 'src/utils/asset.util.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
 import { ImmichFileResponse, getFileNameWithoutExtension, getFilenameExtension } from 'src/utils/file.js';
+import { checkLibraryStorage, isLibraryPathAvailable } from 'src/utils/library-storage.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { fromChecksum } from 'src/utils/request.js';
 
@@ -43,6 +50,14 @@ export interface AssetMediaRedirectResponse {
 
 @Injectable()
 export class AssetMediaService extends BaseService {
+  private async isOriginalAvailable(id: string, knownOffline = false) {
+    const library = await this.libraryRepository.getByAssetId(id);
+    if (!library || (!library.allowOffline && library.storageChecks.length === 0)) {
+      return !knownOffline;
+    }
+    const states = await checkLibraryStorage(library, this.storageRepository);
+    return isLibraryPathAvailable(library.originalPath, states);
+  }
   async getUploadAssetIdByChecksum(auth: AuthDto, checksum?: string): Promise<AssetMediaResponseDto | undefined> {
     if (!checksum) {
       return;
@@ -244,12 +259,16 @@ export class AssetMediaService extends BaseService {
   async downloadOriginal(auth: AuthDto, id: string, dto: AssetDownloadOriginalDto): Promise<ImmichFileResponse> {
     await this.requireAccess({ auth, permission: Permission.AssetDownload, ids: [id] });
 
-    const { originalPath, originalFileName, editedPath } = await this.assetRepository.getForOriginal(
+    const { originalPath, originalFileName, editedPath, isOffline } = await this.assetRepository.getForOriginal(
       id,
       isEditedOnly(auth, dto.edited),
     );
 
     const path = editedPath ?? originalPath!;
+
+    if (!editedPath && !(await this.isOriginalAvailable(id, isOffline))) {
+      throw new ConflictException('Original storage is offline. Connect the storage to access this file.');
+    }
 
     return new ImmichFileResponse({
       path,
@@ -272,9 +291,16 @@ export class AssetMediaService extends BaseService {
 
     const edited = isEditedOnly(auth, dto.edited);
     const size = (dto.size ?? AssetMediaSize.THUMBNAIL) as unknown as AssetFileType;
-    const { originalPath, originalFileName, path } = await this.assetRepository.getForThumbnail(id, size, edited);
+    const { originalPath, originalFileName, path, isOffline } = await this.assetRepository.getForThumbnail(
+      id,
+      size,
+      edited,
+    );
 
     if (size === AssetFileType.FullSize && mimeTypes.isWebSupportedImage(originalPath) && !edited) {
+      if (!(await this.isOriginalAvailable(id, isOffline))) {
+        return { targetSize: AssetMediaSize.PREVIEW };
+      }
       // use original file for web supported images
       return { targetSize: 'original' };
     }
@@ -310,6 +336,10 @@ export class AssetMediaService extends BaseService {
     }
 
     const filepath = asset.encodedVideoPath || asset.originalPath;
+
+    if (!asset.encodedVideoPath && !(await this.isOriginalAvailable(id))) {
+      throw new ConflictException('Original storage is offline. Connect the storage to play this video.');
+    }
 
     return new ImmichFileResponse({
       path: filepath,

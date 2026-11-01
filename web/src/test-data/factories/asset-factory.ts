@@ -23,7 +23,7 @@ export const assetFactory = Sync.makeFactory<AssetResponseDto>({
   isTrashed: false,
   duration: null,
   checksum: Sync.each(() => faker.string.alphanumeric(28)),
-  isOffline: Sync.each(() => faker.datatype.boolean()),
+  isOffline: false,
   hasMetadata: Sync.each(() => faker.datatype.boolean()),
   visibility: AssetVisibility.Timeline,
   width: faker.number.int({ min: 100, max: 1000 }),

@@ -1,4 +1,4 @@
-import { NotFoundException, StreamableFile } from '@nestjs/common';
+import { ConflictException, NotFoundException, StreamableFile } from '@nestjs/common';
 import { NextFunction, Response } from 'express';
 import { access, constants } from 'node:fs/promises';
 import { basename, extname } from 'node:path';
@@ -72,6 +72,10 @@ export const sendFile = async (
 
     return await _sendFile(file.path, { dotfiles: 'allow' });
   } catch (error: Error | any) {
+    if (error instanceof ConflictException) {
+      next(error);
+      return;
+    }
     const { canWrite } = onRouteError(undefined, res, error, logger);
     if (canWrite) {
       next(new NotFoundException());

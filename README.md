@@ -124,3 +124,7 @@ Read more about translations [here](https://docs.immich.app/developer/translatio
 <a href="https://github.com/immich-app/immich/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=immich-app/immich" width="100%"/>
 </a>
+
+## Offline external storage
+
+This local implementation supports removable external libraries while retaining cached previews and pending work. See [the setup and validation guide](docs/docs/guides/offline-external-storage.md).

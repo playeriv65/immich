@@ -25129,6 +25129,10 @@
       },
       "CreateLibraryDto": {
         "properties": {
+          "allowOffline": {
+            "description": "Allow storage to be disconnected during normal use",
+            "type": "boolean"
+          },
           "exclusionPatterns": {
             "description": "Exclusion patterns (max 128)",
             "items": {
@@ -25155,6 +25159,32 @@
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
+          },
+          "storageChecks": {
+            "description": "Read-only storage identity checks",
+            "items": {
+              "properties": {
+                "expectedValue": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "importPath": {
+                  "type": "string"
+                },
+                "markerPath": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "importPath",
+                "markerPath",
+                "expectedValue"
+              ],
+              "type": "object"
+            },
+            "maxItems": 128,
+            "type": "array"
           }
         },
         "required": [
@@ -26722,6 +26752,9 @@
       },
       "LibraryResponseDto": {
         "properties": {
+          "allowOffline": {
+            "type": "boolean"
+          },
           "assetCount": {
             "description": "Number of assets",
             "maximum": 9007199254740991,
@@ -26772,6 +26805,57 @@
             "nullable": true,
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
             "type": "string"
+          },
+          "storageChecks": {
+            "items": {
+              "properties": {
+                "expectedValue": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "importPath": {
+                  "type": "string"
+                },
+                "markerPath": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "importPath",
+                "markerPath",
+                "expectedValue"
+              ],
+              "type": "object"
+            },
+            "maxItems": 128,
+            "type": "array"
+          },
+          "storageStatus": {
+            "items": {
+              "properties": {
+                "importPath": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "status": {
+                  "enum": [
+                    "online",
+                    "offline",
+                    "error"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "importPath",
+                "status"
+              ],
+              "type": "object"
+            },
+            "type": "array"
           },
           "updatedAt": {
             "description": "Last update date",
@@ -37530,6 +37614,10 @@
       },
       "UpdateLibraryDto": {
         "properties": {
+          "allowOffline": {
+            "description": "Allow storage to be disconnected during normal use",
+            "type": "boolean"
+          },
           "exclusionPatterns": {
             "description": "Exclusion patterns (max 128)",
             "items": {
@@ -37550,6 +37638,32 @@
             "description": "Library name",
             "minLength": 1,
             "type": "string"
+          },
+          "storageChecks": {
+            "description": "Read-only storage identity checks",
+            "items": {
+              "properties": {
+                "expectedValue": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "importPath": {
+                  "type": "string"
+                },
+                "markerPath": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "importPath",
+                "markerPath",
+                "expectedValue"
+              ],
+              "type": "object"
+            },
+            "maxItems": 128,
+            "type": "array"
           }
         },
         "type": "object"

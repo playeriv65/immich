@@ -1,6 +1,7 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { parse } from 'node:path';
 import sanitize from 'sanitize-filename';
+import type { LibraryStorageState } from 'src/utils/library-storage.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AuthDto, isEditedOnly } from 'src/dtos/auth.dto.js';
 import {
@@ -13,6 +14,7 @@ import { Permission } from 'src/enum.js';
 import { ImmichReadStream } from 'src/repositories/storage.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { HumanReadableSize } from 'src/utils/bytes.js';
+import { checkLibraryStorage, isLibraryPathAvailable } from 'src/utils/library-storage.js';
 import { getPreferences } from 'src/utils/preferences.js';
 
 @Injectable()
@@ -91,8 +93,26 @@ export class DownloadService extends BaseService {
     await this.requireAccess({ auth, permission: Permission.AssetDownload, ids: dto.assetIds });
 
     const edited = isEditedOnly(auth, dto.edited);
-    const zip = this.storageRepository.createZipStream();
     const assets = await this.assetRepository.getForOriginals(dto.assetIds, edited);
+    const storageByLibrary = new Map<string, LibraryStorageState[]>();
+    for (const asset of assets) {
+      if (edited && asset.editedPath) {
+        continue;
+      }
+      if (asset.libraryId && !storageByLibrary.has(asset.libraryId)) {
+        const library = await this.libraryRepository.get(asset.libraryId);
+        if (library && (library.allowOffline || library.storageChecks.length > 0)) {
+          storageByLibrary.set(library.id, await checkLibraryStorage(library, this.storageRepository));
+        } else {
+          storageByLibrary.set(asset.libraryId, []);
+        }
+      }
+      const states = asset.libraryId ? storageByLibrary.get(asset.libraryId) : undefined;
+      if (states?.length ? !isLibraryPathAvailable(asset.originalPath, states) : asset.isOffline) {
+        throw new ConflictException('Original storage is offline. Connect the storage to download this archive.');
+      }
+    }
+    const zip = this.storageRepository.createZipStream();
     const assetMap = new Map(assets.map((asset) => [asset.id, asset]));
     const paths: Record<string, number> = {};
 

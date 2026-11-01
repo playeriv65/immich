@@ -35,6 +35,18 @@
 <TableRow>
   <TableCell class={libraryTableClasses.column1}>
     <Link href={Route.viewLibrary(library)}>{library.name}</Link>
+    {#each library.storageStatus ?? [] as storage (storage.importPath)}
+      {#if storage.status !== 'online'}
+        <p class="text-sm" role="status">
+          {$t(
+            storage.status === 'offline' && library.allowOffline
+              ? 'admin.library_storage_offline'
+              : 'admin.library_storage_unavailable',
+          )}
+          <span>{storage.importPath}</span>
+        </p>
+      {/if}
+    {/each}
   </TableCell>
   <TableCell class={libraryTableClasses.column2}>
     <Link href={Route.viewUser(owner)}>{owner.name}</Link>

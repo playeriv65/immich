@@ -1,11 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { type Insertable, type Kysely, type Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
+import type { JobItem } from 'src/types.js';
+import type { LibraryStorageState } from 'src/utils/library-storage.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { LibraryStatsResponseDto } from 'src/dtos/library.dto.js';
 import { AssetType, AssetVisibility } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { LibraryTable } from 'src/schema/tables/library.table.js';
+import { asUuid } from 'src/utils/database.js';
 
 export enum AssetSyncResult {
   DO_NOTHING,
@@ -17,6 +20,57 @@ export enum AssetSyncResult {
 @Injectable()
 export class LibraryRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
+
+  getByAssetId(assetId: string) {
+    return this.db
+      .selectFrom('library')
+      .innerJoin('asset', 'asset.libraryId', 'library.id')
+      .selectAll('library')
+      .select('asset.originalPath')
+      .where('asset.id', '=', asUuid(assetId))
+      .where('library.deletedAt', 'is', null)
+      .executeTakeFirst();
+  }
+
+  async updateStorageStatus(id: string, states: LibraryStorageState[]) {
+    await this.db
+      .updateTable('library')
+      .set({ storageStatus: sql<LibraryStorageState[]>`${states}::jsonb` })
+      .where('id', '=', asUuid(id))
+      .where(sql<boolean>`"storageStatus" IS DISTINCT FROM ${states}::jsonb`)
+      .execute();
+  }
+
+  async deferJob(libraryId: string, assetId: string, job: JobItem) {
+    await this.db
+      .insertInto('library_job')
+      .values({ libraryId, assetId, name: job.name, job: sql<Record<string, unknown>>`${job}::jsonb` })
+      .onConflict((conflict) =>
+        conflict
+          .columns(['libraryId', 'assetId', 'name'])
+          .doUpdateSet({ job: sql<Record<string, unknown>>`${job}::jsonb` }),
+      )
+      .execute();
+  }
+
+  getDeferredJobs(libraryId: string) {
+    return this.db
+      .selectFrom('library_job')
+      .innerJoin('asset', 'asset.id', 'library_job.assetId')
+      .select(['library_job.assetId', 'library_job.name', 'library_job.job', 'asset.originalPath'])
+      .where('library_job.libraryId', '=', asUuid(libraryId))
+      .where('asset.deletedAt', 'is', null)
+      .stream();
+  }
+
+  async deleteDeferredJob(libraryId: string, assetId: string, name: string) {
+    await this.db
+      .deleteFrom('library_job')
+      .where('libraryId', '=', asUuid(libraryId))
+      .where('assetId', '=', asUuid(assetId))
+      .where('name', '=', name)
+      .execute();
+  }
 
   @GenerateSql({ params: [DummyValue.UUID] })
   get(id: string, withDeleted = false) {

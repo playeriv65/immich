@@ -8,6 +8,19 @@ import { sharedLinkFactory } from '#test-data/factories/shared-link-factory.ts';
 
 describe('utils', () => {
   describe(getAssetUrl.name, () => {
+    it('checks external original availability before loading a full-resolution image', () => {
+      const asset = assetFactory.build({ type: AssetTypeEnum.Image });
+      const url = getAssetUrl({ asset, forceOriginal: true });
+      expect(url).toContain('/thumbnail');
+      expect(url).toContain('size=fullsize');
+    });
+    it('uses a cached preview for offline assets even when the original is requested', () => {
+      const asset = assetFactory.build({ isOffline: true });
+      const url = getAssetUrl({ asset, forceOriginal: true });
+      expect(url).toContain('/thumbnail');
+      expect(url).toContain('size=preview');
+      expect(url).not.toContain('/original');
+    });
     it('should return thumbnail URL for static images', () => {
       const asset = assetFactory.build({
         originalPath: 'image.jpg',
@@ -50,6 +63,7 @@ describe('utils', () => {
 
     it('should return original URL for animated gifs', () => {
       const asset = assetFactory.build({
+        libraryId: null,
         originalPath: 'image.gif',
         originalMimeType: 'image/gif',
         type: AssetTypeEnum.Image,
@@ -65,6 +79,7 @@ describe('utils', () => {
 
     it('should return original URL for animated webp images', () => {
       const asset = assetFactory.build({
+        libraryId: null,
         originalPath: 'image.webp',
         originalMimeType: 'image/webp',
         type: AssetTypeEnum.Image,
@@ -119,6 +134,7 @@ describe('utils', () => {
 
     it('should return original URL for animated images in shared link with download and showMetadata permissions', () => {
       const asset = assetFactory.build({
+        libraryId: null,
         originalPath: 'image.gif',
         originalMimeType: 'image/gif',
         type: AssetTypeEnum.Image,

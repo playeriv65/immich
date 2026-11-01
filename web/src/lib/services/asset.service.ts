@@ -281,7 +281,7 @@ export const getAssetActions = (
   const Offline: ActionItem = {
     title: $t('asset_offline'),
     icon: mdiAlertOutline,
-    color: 'danger',
+    color: 'secondary',
     $if: () => !!asset.isOffline,
     onAction: () => assetViewerManager.toggleDetailPanel(),
   };
@@ -427,6 +427,11 @@ export const getAssetActions = (
 
 export const handleDownloadAsset = async (asset: AssetResponseDto, { edited }: { edited: boolean }) => {
   const $t = await getFormatter();
+
+  if (asset.isOffline && !(edited && asset.isEdited)) {
+    toastManager.info($t('asset_storage_offline_description'));
+    return;
+  }
 
   const assets = [
     {

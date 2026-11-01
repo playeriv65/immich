@@ -1165,6 +1165,7 @@ export class AssetRepository {
       .selectFrom('asset')
       .select('asset.id')
       .select('originalFileName')
+      .select(['asset.isOffline', 'asset.libraryId'])
       .where('asset.id', 'in', ids)
       .$if(isEdited, (qb) =>
         qb
@@ -1197,7 +1198,7 @@ export class AssetRepository {
       .leftJoin('asset_file', (join) =>
         join.onRef('asset.id', '=', 'asset_file.assetId').on('asset_file.type', '=', type),
       )
-      .select(['asset.originalPath', 'asset.originalFileName', 'asset_file.path as path'])
+      .select(['asset.originalPath', 'asset.originalFileName', 'asset.isOffline', 'asset_file.path as path'])
       .orderBy('asset_file.isEdited', isEdited ? 'desc' : 'asc')
       .executeTakeFirstOrThrow();
   }

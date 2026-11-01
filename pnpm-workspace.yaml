@@ -35,6 +35,12 @@ overrides:
   # 1.9.3-1.9.5 are confirmed broken
   tsc-alias: 1.9.9
 packageExtensions:
+  eslint:
+    dependencies:
+      typescript: npm:@typescript/typescript6@6.0.2
+  svelte-eslint-parser:
+    dependencies:
+      typescript: npm:@typescript/typescript6@6.0.2
   nestjs-kysely:
     dependencies:
       tslib: '*'

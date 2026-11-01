@@ -21,6 +21,20 @@ describe(LibraryController.name, () => {
   const id = factory.uuid();
 
   describe('POST /libraries', () => {
+    it.each([
+      [{ importPath: '/photos', markerPath: '/photos-other/id', expectedValue: 'disk' }],
+      [{ importPath: '/photos', markerPath: 'relative/id', expectedValue: 'disk' }],
+      [
+        { importPath: '/photos', markerPath: '/photos/id', expectedValue: 'disk' },
+        { importPath: '/photos/.', markerPath: '/photos/id', expectedValue: 'disk' },
+      ],
+    ])('rejects invalid storage identity checks %j', async (...storageChecks) => {
+      const { status } = await request(ctx.getHttpServer()).post('/libraries').send({ ownerId: id, storageChecks });
+
+      expect(status).toBe(400);
+      expect(service.create).not.toHaveBeenCalled();
+    });
+
     it('should require an owner id', async () => {
       const { status, body } = await request(ctx.getHttpServer()).post('/libraries').send({});
 

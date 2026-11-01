@@ -1,7 +1,31 @@
 import { createZodDto } from 'nestjs-zod';
+import path from 'node:path';
 import z from 'zod';
 import { Library } from 'src/database.js';
+import { isPathInImportPath } from 'src/utils/library-storage.js';
 import { isoDatetimeToDate } from 'src/validation.js';
+
+const storageCheckSchema = z
+  .object({
+    importPath: z.string().refine(path.isAbsolute, 'Import path must be absolute'),
+    markerPath: z.string().refine(path.isAbsolute, 'Marker path must be absolute'),
+    expectedValue: z.string().trim().min(1).max(128),
+  })
+  .refine((check) => isPathInImportPath(check.markerPath, check.importPath), 'Marker must be inside its import path');
+
+const storageChecksSchema = z
+  .array(storageCheckSchema)
+  .max(128)
+  .refine(
+    (checks) => new Set(checks.map(({ importPath }) => path.normalize(importPath))).size === checks.length,
+    'Storage checks must have unique import paths',
+  );
+
+const storageStatusSchema = z.object({
+  importPath: z.string(),
+  status: z.enum(['online', 'offline', 'error']),
+  message: z.string().optional(),
+});
 
 const stringArrayMax128 = z
   .array(z.string())
@@ -12,6 +36,8 @@ const stringArrayMax128 = z
 const CreateLibrarySchema = z
   .object({
     ownerId: z.uuidv4().describe('Owner user ID'),
+    allowOffline: z.boolean().optional().describe('Allow storage to be disconnected during normal use'),
+    storageChecks: storageChecksSchema.optional().describe('Read-only storage identity checks'),
     name: z.string().min(1).optional().describe('Library name'),
     importPaths: stringArrayMax128.optional().describe('Import paths (max 128)'),
     exclusionPatterns: stringArrayMax128.optional().describe('Exclusion patterns (max 128)'),
@@ -20,6 +46,8 @@ const CreateLibrarySchema = z
 
 const UpdateLibrarySchema = z
   .object({
+    allowOffline: z.boolean().optional().describe('Allow storage to be disconnected during normal use'),
+    storageChecks: storageChecksSchema.optional().describe('Read-only storage identity checks'),
     name: z.string().min(1).optional().describe('Library name'),
     importPaths: stringArrayMax128.optional().describe('Import paths (max 128)'),
     exclusionPatterns: stringArrayMax128.optional().describe('Exclusion patterns (max 128)'),
@@ -62,6 +90,9 @@ const ValidateLibraryResponseSchema = z
 
 const LibraryResponseSchema = z
   .object({
+    allowOffline: z.boolean().optional(),
+    storageChecks: storageChecksSchema.optional(),
+    storageStatus: z.array(storageStatusSchema).optional(),
     id: z.uuidv4().describe('Library ID'),
     ownerId: z.uuidv4().describe('Owner user ID'),
     name: z.string().describe('Library name'),
@@ -103,5 +134,8 @@ export function mapLibrary(entity: Library): LibraryResponseDto {
     assetCount,
     importPaths: entity.importPaths,
     exclusionPatterns: entity.exclusionPatterns,
+    allowOffline: entity.allowOffline,
+    storageChecks: entity.storageChecks,
+    storageStatus: entity.storageStatus,
   };
 }

@@ -7,6 +7,15 @@ import { AssetType, AssetVisibility, IntegrityReport, JobName, JobStatus, Manual
 import { ArgsOf } from 'src/repositories/event.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { hexOrBufferToBase64 } from 'src/utils/bytes.js';
+import { checkLibraryStorage, isLibraryPathAvailable } from 'src/utils/library-storage.js';
+
+const originalFileJobs = new Set<JobName>([
+  JobName.SidecarCheck,
+  JobName.SidecarWrite,
+  JobName.AssetExtractMetadata,
+  JobName.AssetGenerateThumbnails,
+  JobName.AssetEncodeVideo,
+]);
 
 const asJobItem = (dto: JobCreateDto): JobItem => {
   switch (dto.name) {
@@ -78,6 +87,26 @@ const asJobItem = (dto: JobCreateDto): JobItem => {
 
 @Injectable()
 export class JobService extends BaseService {
+  private async deferUnavailableJob(job: JobItem): Promise<boolean> {
+    if (!originalFileJobs.has(job.name) || !job.data || !('id' in job.data)) {
+      return false;
+    }
+    const library = await this.libraryRepository.getByAssetId(job.data.id);
+    if (!library || (!library.allowOffline && library.storageChecks.length === 0)) {
+      return false;
+    }
+    const states = await checkLibraryStorage(library, this.storageRepository);
+    await this.libraryRepository.updateStorageStatus(library.id, states);
+    if (isLibraryPathAvailable(library.originalPath, states)) {
+      return false;
+    }
+    await this.libraryRepository.deferJob(library.id, job.data.id, job);
+    if (states.some((entry) => entry.status === 'error')) {
+      this.logger.warn(`Library ${library.name} requires attention before processing ${job.name}`);
+    }
+    return true;
+  }
+
   async create(dto: JobCreateDto): Promise<void> {
     await this.jobRepository.queue(asJobItem(dto));
   }
@@ -86,12 +115,30 @@ export class JobService extends BaseService {
   async onJobRun(...[queueName, job]: ArgsOf<'JobRun'>) {
     try {
       await this.eventRepository.emit('JobStart', queueName, job);
+      if (await this.deferUnavailableJob(job)) {
+        return;
+      }
       const response = await this.jobRepository.run(job);
       await this.eventRepository.emit('JobSuccess', { job, response });
+      if (
+        response !== JobStatus.Failed &&
+        job.data &&
+        'libraryResume' in job.data &&
+        job.data.libraryResume &&
+        'id' in job.data
+      ) {
+        const library = await this.libraryRepository.getByAssetId(job.data.id);
+        if (library) {
+          await this.libraryRepository.deleteDeferredJob(library.id, job.data.id, job.name);
+        }
+      }
       if (response && typeof response === 'string' && [JobStatus.Success, JobStatus.Skipped].includes(response)) {
         await this.onDone(job);
       }
     } catch (error: Error | any) {
+      if (await this.deferUnavailableJob(job)) {
+        return;
+      }
       await this.eventRepository.emit('JobError', { job, error });
     } finally {
       await this.eventRepository.emit('JobComplete', queueName, job);

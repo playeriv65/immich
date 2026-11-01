@@ -1,9 +1,11 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Insertable } from 'kysely';
+import { isEqual } from 'lodash-es';
 import { R_OK } from 'node:constants';
 import { Stats } from 'node:fs';
 import path, { isAbsolute, parse } from 'node:path';
 import picomatch from 'picomatch';
+import type { Library } from 'src/database.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobOf } from 'src/types.js';
 import { JOBS_LIBRARY_PAGINATION_SIZE } from 'src/constants.js';
@@ -33,6 +35,7 @@ import {
 import { AssetSyncResult } from 'src/repositories/library.repository.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { BaseService } from 'src/services/base.service.js';
+import { checkLibraryStorage, isLibraryPathAvailable } from 'src/utils/library-storage.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, createLibraryMatcher, findOrFail, handlePromiseError } from 'src/utils/misc.js';
 
@@ -41,6 +44,42 @@ export class LibraryService extends BaseService {
   private watchLibraries = false;
   private lock = false;
   private watchers: Record<string, () => Promise<void>> = {};
+
+  private async checkStorage(library: Library) {
+    if (!library.allowOffline && library.storageChecks.length === 0) {
+      return library.importPaths.map((importPath) => ({ importPath, status: 'online' as const }));
+    }
+    const states = await checkLibraryStorage(library, this.storageRepository);
+    if (!isEqual(states, library.storageStatus)) {
+      await this.libraryRepository.updateStorageStatus(library.id, states);
+      for (const state of states) {
+        if (state.status === 'error' || (state.status === 'offline' && !library.allowOffline)) {
+          this.logger.warn(
+            `Library ${library.name}: ${state.importPath} ${state.status}${state.message ? `: ${state.message}` : ''}`,
+          );
+        } else {
+          this.logger.log(`Library ${library.name}: ${state.importPath} ${state.status}`);
+        }
+      }
+      library.storageStatus = states;
+    }
+    return states;
+  }
+
+  private async resumeJobs(library: Library) {
+    const states = await this.checkStorage(library);
+    for await (const pending of this.libraryRepository.getDeferredJobs(library.id)) {
+      if (!isLibraryPathAvailable(pending.originalPath, states)) {
+        continue;
+      }
+
+      const pendingJob = pending.job as unknown as import('src/types.js').JobItem;
+      await this.jobRepository.queue({
+        ...pendingJob,
+        data: { ...pendingJob.data, libraryResume: true },
+      } as import('src/types.js').JobItem);
+    }
+  }
 
   @OnEvent({ name: 'ConfigInit', workers: [ImmichWorker.Microservices] })
   async onConfigInit({
@@ -98,6 +137,12 @@ export class LibraryService extends BaseService {
       return false;
     }
 
+    const states = await this.checkStorage(library);
+    const availablePaths = library.importPaths.filter((entry) => isLibraryPathAvailable(entry, states));
+    if (availablePaths.length === 0) {
+      return false;
+    }
+
     await this.unwatch(id);
 
     this.logger.log(`Starting to watch library ${library.id} with import path(s) ${library.importPaths}`);
@@ -131,7 +176,7 @@ export class LibraryService extends BaseService {
     };
 
     this.watchers[id] = this.storageRepository.watch(
-      library.importPaths,
+      availablePaths,
       {
         usePolling: false,
         ignoreInitial: true,
@@ -234,10 +279,13 @@ export class LibraryService extends BaseService {
   }
 
   async create(dto: CreateLibraryDto): Promise<LibraryResponseDto> {
+    this.validateStorageChecks(dto.importPaths ?? [], dto.storageChecks ?? [], dto.allowOffline ?? false);
     const library = await this.libraryRepository.create({
       ownerId: dto.ownerId,
       name: dto.name ?? 'New External Library',
       importPaths: dto.importPaths ?? [],
+      allowOffline: dto.allowOffline ?? false,
+      storageChecks: dto.storageChecks ?? [],
       exclusionPatterns: dto.exclusionPatterns ?? [
         '**/@eaDir/**',
         '**/._*',
@@ -265,14 +313,22 @@ export class LibraryService extends BaseService {
       return JobStatus.Failed;
     }
 
+    const states = await this.checkStorage(library);
+
     const assetImports: Insertable<AssetTable>[] = [];
     await Promise.all(
       job.paths.map(async (path) => {
+        if (!isLibraryPathAvailable(path, states)) {
+          return;
+        }
         try {
           const asset = await this.processEntity(path, library.ownerId, job.libraryId);
           assetImports.push(asset);
         } catch (error) {
-          this.logger.error(`Error processing ${path} for library ${job.libraryId}: ${error}`);
+          const updated = await this.checkStorage(library);
+          if (isLibraryPathAvailable(path, updated)) {
+            this.logger.error(`Error processing ${path} for library ${job.libraryId}: ${error}`);
+          }
         }
       }),
     );
@@ -346,13 +402,23 @@ export class LibraryService extends BaseService {
   }
 
   async update(id: string, dto: UpdateLibraryDto): Promise<LibraryResponseDto> {
-    await this.findOrFail(id);
+    const current = await this.findOrFail(id);
+    if (dto.importPaths && !dto.storageChecks) {
+      dto.storageChecks = current.storageChecks.filter((check) =>
+        dto.importPaths!.some((entry) => path.normalize(entry) === path.normalize(check.importPath)),
+      );
+    }
+    this.validateStorageChecks(
+      dto.importPaths ?? current.importPaths,
+      dto.storageChecks ?? current.storageChecks,
+      dto.allowOffline ?? current.allowOffline,
+    );
 
     if (dto.importPaths) {
       const validation = await this.validate(id, { importPaths: dto.importPaths });
       if (validation.importPaths) {
         for (const path of validation.importPaths) {
-          if (!path.isValid) {
+          if (!path.isValid && !(dto.allowOffline ?? current.allowOffline)) {
             throw new BadRequestException(`Invalid import path: ${path.message}`);
           }
         }
@@ -362,6 +428,22 @@ export class LibraryService extends BaseService {
     const library = await this.libraryRepository.update(id, dto);
     await this.eventRepository.emit('LibraryUpdate');
     return mapLibrary(library);
+  }
+
+  private validateStorageChecks(importPaths: string[], checks: Library['storageChecks'], allowOffline: boolean) {
+    if (
+      checks.some((check) => importPaths.every((entry) => path.normalize(entry) !== path.normalize(check.importPath)))
+    ) {
+      throw new BadRequestException('Storage check must reference a configured import path');
+    }
+    if (
+      allowOffline &&
+      importPaths.some((entry) => checks.every((check) => path.normalize(entry) !== path.normalize(check.importPath)))
+    ) {
+      throw new BadRequestException(
+        'Configure a storage identity marker for each import path before allowing offline storage',
+      );
+    }
   }
 
   async delete(id: string) {
@@ -482,6 +564,11 @@ export class LibraryService extends BaseService {
 
   @OnJob({ name: JobName.LibrarySyncAssets, queue: QueueName.Library })
   async handleSyncAssets(job: JobOf<JobName.LibrarySyncAssets>): Promise<JobStatus> {
+    const library = await this.libraryRepository.get(job.libraryId);
+    if (!library || library.deletedAt) {
+      return JobStatus.Skipped;
+    }
+    const storageStatus = await this.checkStorage(library);
     const assets = await this.assetJobRepository.getForSyncAssets(job.assetIds);
     const isInLibrary = createLibraryMatcher(job);
 
@@ -494,7 +581,16 @@ export class LibraryService extends BaseService {
     this.logger.debug(`Checking batch of ${assets.length} existing asset(s) in library ${job.libraryId}`);
 
     const stats = await Promise.all(
-      assets.map((asset) => this.storageRepository.stat(asset.originalPath).catch(() => null)),
+      assets.map((asset) =>
+        isLibraryPathAvailable(asset.originalPath, storageStatus)
+          ? this.storageRepository.stat(asset.originalPath).catch((error: NodeJS.ErrnoException) => {
+              if (error.code !== 'ENOENT' && error.code !== 'ENOTDIR') {
+                this.logger.warn(`Cannot access library asset ${asset.originalPath} (${error.code ?? 'unknown'})`);
+              }
+              return null;
+            })
+          : Promise.resolve(null),
+      ),
     );
 
     for (let i = 0; i < assets.length; i++) {
@@ -538,7 +634,7 @@ export class LibraryService extends BaseService {
 
     const promises = [];
     if (assetIdsToOffline.length > 0) {
-      promises.push(this.assetRepository.updateAll(assetIdsToOffline, { isOffline: true, deletedAt: new Date() }));
+      promises.push(this.assetRepository.updateAll(assetIdsToOffline, { isOffline: true }));
     }
 
     if (trashedAssetIdsToOffline.length > 0) {
@@ -558,6 +654,8 @@ export class LibraryService extends BaseService {
     }
 
     await Promise.all(promises);
+
+    await this.resumeJobs(library);
 
     const remainingCount = assets.length - assetIdsToOffline.length - assetIdsToUpdate.length - assetIdsToOnline.length;
     const cumulativePercentage = ((100 * job.progressCounter) / job.totalAssets).toFixed(1);
@@ -615,11 +713,17 @@ export class LibraryService extends BaseService {
       return JobStatus.Skipped;
     }
 
+    const storageStatus = await this.checkStorage(library);
+    await this.resumeJobs(library);
+
     this.logger.debug(`Validating import paths for library ${library.id}...`);
 
     const validImportPaths: string[] = [];
 
     for (const importPath of library.importPaths) {
+      if (!isLibraryPathAvailable(importPath, storageStatus)) {
+        continue;
+      }
       const validation = await this.validateImportPath(importPath);
       if (validation.isValid) {
         validImportPaths.push(path.normalize(importPath));
@@ -629,7 +733,9 @@ export class LibraryService extends BaseService {
     }
 
     if (validImportPaths.length === 0) {
-      this.logger.warn(`No valid import paths found for library ${library.id}`);
+      if (!library.allowOffline || storageStatus.some(({ status }) => status === 'error')) {
+        this.logger.warn(`No valid import paths found for library ${library.id}`);
+      }
 
       return JobStatus.Skipped;
     }
@@ -674,17 +780,30 @@ export class LibraryService extends BaseService {
 
     await this.libraryRepository.update(job.id, { refreshedAt: new Date() });
 
+    if (this.watchLibraries && library.allowOffline) {
+      await this.watch(library.id);
+    }
+
     return JobStatus.Success;
   }
 
   @OnJob({ name: JobName.LibraryRemoveAsset, queue: QueueName.Library })
   async handleAssetRemoval(job: JobOf<JobName.LibraryRemoveAsset>): Promise<JobStatus> {
-    // This is only for handling file unlink events via the file watcher
-    this.logger.verbose(`Deleting asset(s) ${job.paths} from library ${job.libraryId}`);
+    const library = await this.libraryRepository.get(job.libraryId);
+    if (!library || library.deletedAt) {
+      return JobStatus.Skipped;
+    }
     for (const assetPath of job.paths) {
       const asset = await this.assetRepository.getByLibraryIdAndOriginalPath(job.libraryId, assetPath);
       if (asset) {
-        await this.assetRepository.remove(asset);
+        await this.handleSyncAssets({
+          libraryId: library.id,
+          importPaths: library.importPaths,
+          exclusionPatterns: library.exclusionPatterns,
+          assetIds: [asset.id],
+          progressCounter: 0,
+          totalAssets: 1,
+        });
       }
     }
 

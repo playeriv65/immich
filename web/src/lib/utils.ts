@@ -207,6 +207,9 @@ export const getAssetUrl = ({
     return getAssetMediaUrl({ id, size: AssetMediaSize.Preview, cacheKey });
   }
   const size = targetImageSize(asset, forceOriginal);
+  if (size === AssetMediaSize.Original && asset.type === AssetTypeEnum.Image && asset.libraryId) {
+    return getAssetMediaUrl({ id, size: AssetMediaSize.Fullsize, cacheKey });
+  }
   return getAssetMediaUrl({ id, size, cacheKey });
 };
 
@@ -223,6 +226,9 @@ const forceUseOriginal = (asset: AssetResponseDto) => {
 };
 
 export const targetImageSize = (asset: AssetResponseDto, forceOriginal: boolean) => {
+  if (asset.isOffline) {
+    return AssetMediaSize.Preview;
+  }
   if (forceOriginal || get(alwaysLoadOriginalFile) || forceUseOriginal(asset)) {
     return asset.type === AssetTypeEnum.Video || isWebCompatibleImage(asset)
       ? AssetMediaSize.Original

@@ -168,7 +168,7 @@ overrides:
   sharp: ^0.35.3
   tsc-alias: 1.9.9
 
-packageExtensionsChecksum: sha256-W6pFzyf+6QXnV91iA6oob0OGVkergPXDN1afLgoF53k=
+packageExtensionsChecksum: sha256-WtOj9ZJIJYGDFVIbUFURbCLQtCQXeower9Zw2wzRlmw=
 
 pnpmfileChecksum: sha256-un98do36L0wZyqsjcLozQ3YUadCAn2yz5bXcBbOuyDA=
 
@@ -21415,6 +21415,7 @@ snapshots:
       minimatch: 10.2.6
       natural-compare: 1.4.0
       optionator: 0.9.4
+      typescript: '@typescript/typescript6@6.0.2'
     optionalDependencies:
       jiti: 2.7.0
     transitivePeerDependencies:
@@ -26714,6 +26715,7 @@ snapshots:
       postcss-scss: 4.0.9(postcss@8.5.31)
       postcss-selector-parser: 7.1.5
       semver: 7.8.5
+      typescript: '@typescript/typescript6@6.0.2'
     optionalDependencies:
       svelte: 5.57.2(@typescript-eslint/types@8.72.0)
 

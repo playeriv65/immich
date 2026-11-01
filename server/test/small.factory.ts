@@ -148,6 +148,9 @@ const userAdminFactory = (user: Partial<UserAdmin> = {}) => {
 };
 
 const libraryFactory = (library: Partial<Library> = {}) => ({
+  allowOffline: false,
+  storageChecks: [],
+  storageStatus: [],
   id: newUuid(),
   createdAt: newDate(),
   updatedAt: newDate(),

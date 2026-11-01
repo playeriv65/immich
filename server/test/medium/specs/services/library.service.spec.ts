@@ -1,7 +1,7 @@
 import { Kysely } from 'kysely';
 import { chunk } from 'lodash-es';
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rename, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import type { SystemConfig } from 'src/dtos/config.dto.js';
@@ -128,7 +128,6 @@ class LibraryTestContext extends MediumTestContext<typeof LibraryService> {
       .execute();
   }
 
-  /** The paths a library scan left visible, i.e. neither offline nor trashed */
   async getAssetPaths(libraryId: string) {
     const assets = await this.database
       .selectFrom('asset')
@@ -639,7 +638,7 @@ describe(LibraryService.name, () => {
 
       await rm(missing);
       await ctx.scan(library.id);
-      await expect(ctx.getAssetPaths(library.id)).resolves.toEqual([kept]);
+      await expect(ctx.getAssetPaths(library.id)).resolves.toEqual([kept, missing]);
     });
   });
 
@@ -745,6 +744,70 @@ describe(LibraryService.name, () => {
   });
 
   describe('handleSyncAssets', () => {
+    it('preserves albums, previews and pending jobs across a disconnected volume and process restart', async () => {
+      const { sut, ctx } = setup();
+      const originalPath = await createFile(join(importPath, 'original.jpg'));
+      const markerPath = join(importPath, '.volume');
+      await writeFile(markerPath, 'disk-a');
+      const library = await ctx.createLibrary({ importPaths: [importPath] });
+      await sut.update(library.id, {
+        allowOffline: true,
+        storageChecks: [{ importPath, markerPath, expectedValue: 'disk-a' }],
+      });
+      const { asset } = await ctx.newAsset({
+        ownerId: library.ownerId,
+        libraryId: library.id,
+        originalPath,
+        isExternal: true,
+        fileModifiedAt,
+      });
+      const previewPath = await createFile(join(tempDir, 'cache', 'preview.jpg'));
+      await ctx.get(AssetRepository).upsertFile({ assetId: asset.id, path: previewPath, type: AssetFileType.Preview });
+      const { result: album } = await ctx.newAlbum({ ownerId: library.ownerId, albumName: 'Keep this album' }, [
+        asset.id,
+      ]);
+      const pendingJob = { name: JobName.AssetEncodeVideo, data: { id: asset.id } } as const;
+      await ctx.get(LibraryRepository).deferJob(library.id, asset.id, pendingJob);
+      await ctx.get(LibraryRepository).deferJob(library.id, asset.id, pendingJob);
+      const job = {
+        libraryId: library.id,
+        importPaths: [importPath],
+        exclusionPatterns: [],
+        assetIds: [asset.id],
+        progressCounter: 0,
+        totalAssets: 1,
+      };
+
+      await rename(importPath, `${importPath}-disconnected`);
+      await sut.handleSyncAssets(job);
+      await setup().sut.handleSyncAssets(job);
+
+      expect(await ctx.get(AssetRepository).getById(asset.id)).toEqual(
+        expect.objectContaining({ isOffline: true, deletedAt: null }),
+      );
+      expect(existsSync(previewPath)).toBe(true);
+      expect(
+        await ctx.database.selectFrom('album_asset').select('assetId').where('albumId', '=', album.id).execute(),
+      ).toHaveLength(1);
+      expect(
+        await ctx.database.selectFrom('library_job').selectAll().where('libraryId', '=', library.id).execute(),
+      ).toHaveLength(1);
+      expect(await ctx.get(LibraryRepository).get(library.id)).toEqual(
+        expect.objectContaining({ storageStatus: [{ importPath, status: 'offline' }] }),
+      );
+
+      await rename(`${importPath}-disconnected`, importPath);
+      const jobs = ctx.getMock(JobRepository);
+      jobs.queue.mockClear();
+      await sut.handleSyncAssets(job);
+
+      expect(await ctx.get(AssetRepository).getById(asset.id)).toEqual(
+        expect.objectContaining({ isOffline: false, deletedAt: null }),
+      );
+      expect(jobs.queue).toHaveBeenCalledWith({ name: pendingJob.name, data: { id: asset.id, libraryResume: true } });
+      expect(existsSync(previewPath)).toBe(true);
+    });
+
     it('should set an asset offline if its file is missing', async () => {
       const { sut, ctx } = setup();
       const assetRepo = ctx.get(AssetRepository);
@@ -772,7 +835,7 @@ describe(LibraryService.name, () => {
 
       const updated = await assetRepo.getById(asset.id);
       expect(updated).toEqual(expect.objectContaining({ isOffline: true }));
-      expect(updated?.deletedAt).toBeInstanceOf(Date);
+      expect(updated?.deletedAt).toBeNull();
     });
 
     it('should not set an asset offline if file exists in import path and is not excluded', async () => {
