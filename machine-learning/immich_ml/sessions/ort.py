@@ -286,6 +286,8 @@ def prepared(spec: GraphSpec) -> Path:
         child = subprocess.run(
             [sys.executable, "-m", "immich_ml.sessions.prepare"],
             input=pickle.dumps(spec),
+            stdout=sys.stdout,
+            stderr=sys.stderr,
             creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
         )
         if (graph := fresh(spec)) is None:
