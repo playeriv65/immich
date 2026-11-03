@@ -758,6 +758,34 @@ def graph_spec(model_path: Path, providers: list[str] | None = None, **fields: A
 
 
 class TestPreparedGraphs:
+    @pytest.mark.parametrize("rank", [3, 4])
+    def test_directml_expands_attention_without_changing_results(self, tmp_path: Path, rank: int) -> None:
+        import onnx
+        from immich_model.runtime import apply_rewrites
+        from onnx import TensorProto, helper
+
+        shape = [1, 4, 8] if rank == 3 else [1, 2, 4, 4]
+        attributes: dict[str, Any] = {"q_num_heads": 2, "kv_num_heads": 2} if rank == 3 else {}
+        graph = helper.make_graph(
+            [helper.make_node("Attention", ["q", "k", "v"], ["output"], **attributes)],
+            "attention",
+            [helper.make_tensor_value_info(name, TensorProto.FLOAT, shape) for name in ("q", "k", "v")],
+            [helper.make_tensor_value_info("output", TensorProto.FLOAT, shape)],
+        )
+        path = tmp_path / "attention.onnx"
+        onnx.save(helper.make_model(graph, opset_imports=[helper.make_opsetid("", 23)], ir_version=10), path)
+        spec = graph_spec(path, ["DmlExecutionProvider"])
+        rewritten = apply_rewrites(path, spec.plan)
+        assert rewritten != path
+        assert not any(node.op_type == "Attention" for node in onnx.load(rewritten).graph.node)
+        assert any(node.op_type == "Attention" for node in onnx.load(path).graph.node)
+        assert "decompose_attention" not in graph_spec(path).plan.names
+        rng = np.random.default_rng(0)
+        inputs = {name: rng.standard_normal(shape).astype(np.float32) for name in ("q", "k", "v")}
+        expected = ort.InferenceSession(path.as_posix(), providers=["CPUExecutionProvider"]).run(None, inputs)
+        actual = ort.InferenceSession(rewritten.as_posix(), providers=["CPUExecutionProvider"]).run(None, inputs)
+        np.testing.assert_allclose(actual[0], expected[0], rtol=1e-5, atol=1e-6)
+
     def test_opens_what_a_child_prepared_until_the_facts_change(self, tmp_path: Path, mocker: MockerFixture) -> None:
         graph = linear_graph(tmp_path)
 

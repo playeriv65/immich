@@ -9,13 +9,14 @@ from collections.abc import Mapping, Sequence
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from functools import cache, cached_property
+from hashlib import sha256
 from pathlib import Path
 from threading import Lock
 from typing import Any, NamedTuple
 
 import numpy as np
 import onnxruntime as ort
-from immich_model.runtime import RewriteContext, RewritePlan, plan_rewrites
+from immich_model.runtime import REGISTRY, RewriteContext, RewritePlan, plan_rewrites
 from numpy.typing import NDArray
 from onnxruntime.capi.onnxruntime_pybind11_state import Fail, InvalidProtobuf
 from pydantic import BaseModel
@@ -300,7 +301,12 @@ def prepared(spec: GraphSpec) -> Path:
 @cache
 def _plan(provider: str) -> RewritePlan:
     version = tuple(int(piece) for piece in ort.__version__.split(".")[:3])
-    return plan_rewrites(RewriteContext(target=PLANNED_AS.get(provider, provider), ort_version=version))
+    plan = plan_rewrites(RewriteContext(target=PLANNED_AS.get(provider, provider), ort_version=version))
+    if provider != "DmlExecutionProvider" or "decompose_attention" in plan.names:
+        return plan
+    rewrite = next(row for row in REGISTRY if row.name == "decompose_attention")
+    digest = sha256((plan.digest + "|" + rewrite.name).encode()).hexdigest()[:12]
+    return RewritePlan((*plan.rewrites, rewrite), digest)
 
 
 @cache

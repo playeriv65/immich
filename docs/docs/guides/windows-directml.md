@@ -22,3 +22,5 @@ DirectML sessions disable memory-pattern optimization, use sequential execution 
 Run formatting, lint, type checks and tests through the existing mise tasks. `TestOrtSessions` covers DirectML's required session settings. Full unit tests also exercise graph preparation, file locking and allocator cleanup. Device validation should additionally execute a small graph with CPU fallback disabled, then test image search, text search, face detection and OCR through `/predict`.
 
 The Windows launcher uses Uvicorn. Linux deployments retain Gunicorn and its existing worker configuration.
+
+ONNX Attention is decomposed using the existing model rewrite before DirectML session creation. Unsupported fused Attention otherwise falls back to CPU and can dominate inference despite DirectML appearing first in the provider list. The rewrite participates in the artifact fingerprint, so cached graphs are regenerated when the plan changes. Validate actual operator placement with ONNX Runtime profiling and compare feature vectors after changing graph preparation.

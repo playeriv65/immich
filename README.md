@@ -129,4 +129,4 @@ Read more about translations [here](https://docs.immich.app/developer/translatio
 
 This local implementation supports removable external libraries while retaining cached previews and pending work. See [the setup and validation guide](docs/docs/guides/offline-external-storage.md).
 
-Native Windows GPU inference is available through [DirectML](docs/docs/guides/windows-directml.md), including model-lifetime configuration for sustained imports.
+Native Windows GPU inference is available through [DirectML](docs/docs/guides/windows-directml.md), including Attention graph preparation and model-lifetime configuration for sustained imports.
